@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: imgcdn
+      POSTGRES_USER: imgcdn
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imgcdn"]
+      interval: 3s
+      retries: 10
+
+  imgproxy:
+    image: ghcr.io/imgproxy/imgproxy:v3
+    environment:
+      IMGPROXY_KEY: ${IMGPROXY_KEY}
+      IMGPROXY_SALT: ${IMGPROXY_SALT}
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /data/uploads
+      IMGPROXY_MAX_SRC_RESOLUTION: "50"
+      IMGPROXY_MAX_SRC_FILE_SIZE: "20971520"
+      IMGPROXY_AVIF_SPEED: "8"
+    volumes:
+      - type: bind
+        source: "/Volumes/Media 1/imgcdn-uploads"
+        target: /data/uploads
+        read_only: true
+        bind:
+          create_host_path: false
+
+  api:
+    build: ./api
+    environment:
+      DB_CONN: Host=postgres;Database=imgcdn;Username=imgcdn;Password=${POSTGRES_PASSWORD}
+      IMGPROXY_URL: http://imgproxy:8080
+      IMGPROXY_KEY: ${IMGPROXY_KEY}
+      IMGPROXY_SALT: ${IMGPROXY_SALT}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - type: bind
+        source: "/Volumes/Media 1/imgcdn-uploads"
+        target: /data/uploads
+        bind:
+          create_host_path: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["8090:80"]
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [api]
+
+volumes:
+  pgdata:
