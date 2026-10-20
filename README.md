@@ -18,7 +18,7 @@ client -> nginx :8090 (cache theo avif/webp/orig) -> api (.NET 8) -> postgres
 ## Chạy
 
 1. `cp .env.example .env`, điền `POSTGRES_PASSWORD`, `IMGPROXY_KEY`, `IMGPROXY_SALT` (`openssl rand -hex 32`).
-2. Sửa `source:` của hai bind mount trong `docker-compose.yml` (hiện là `/Volumes/Media 1/imgcdn-uploads`, đường dẫn riêng của máy dev; thư mục phải tồn tại vì `create_host_path: false`).
+2. Sửa `source:` của hai bind mount trong `docker-compose.yml` (hiện là `**/imgcdn-uploads`, đường dẫn riêng của máy dev; thư mục phải tồn tại vì `create_host_path: false`).
 3. `docker compose up -d --build`
 4. Kiểm tra: `curl localhost:8090/healthz` trả `ok`. Cổng `8090` (cổng 8080 của máy dev đang bị app khác chiếm).
 
@@ -84,12 +84,12 @@ Phần lớn mức giảm đến từ thu nhỏ kích thước; riêng đổi đ
 - Ảnh công khai nếu biết UUID; chưa có ảnh riêng tư.
 - Chưa có: rate limit, HTTPS, xác thực email, đổi mật khẩu, thu hồi session, giao diện web, ảnh gif/svg/heic.
 - Chưa có test tự động; kiểm thử hiện là script/curl thủ công.
-- Chưa đặt Cloudflare phía trước: cache key của Cloudflare phải tách theo định dạng (xem `nginx/nginx.conf`, map `$img_fmt`).
+- Chưa đặt Cloudflare phía trước: cache key của Cloudflare phải tách theo định dạng (xem `infra/nginx/nginx.conf`, map `$img_fmt`).
 - Lưu trữ cục bộ một máy; lên production nên dùng object storage (S3/R2), tách control plane (tài khoản, quota, billing) và data plane (giao ảnh).
 - Bảng `images` / `used_bytes` sẽ lệch nếu xoá file hoặc volume bằng tay.
 
 ## Lưu ý vận hành
 
-- `db/init.sql` chỉ chạy khi volume `pgdata` còn trống.
+- `infra/db/init.sql` chỉ chạy khi volume `pgdata` còn trống.
 - `docker compose down -v` xoá dữ liệu Postgres (ảnh nằm trên HDD, không bị xoá).
 - `appsettings.json` đặt `Microsoft.AspNetCore: Warning` nên không có log từng request; đổi sang `Information` khi cần debug.
