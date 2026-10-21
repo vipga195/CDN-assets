@@ -100,11 +100,11 @@ Script upload từng ảnh, tải bản gốc/webp/avif ở chiều rộng `W`, 
 - Giao ảnh qua imgproxy với URL ký, whitelist chiều rộng, quy tắc ảnh nhỏ.
 - Xoá ảnh hoàn quota, script đo.
 - Vai trò admin (`users.role`, `users.disabled`), `/admin/users`, khoá/mở user (bước B).
+- Giao diện admin (`apps/admin`, Next.js, chạy container riêng qua nginx `/admin/`): đăng nhập bằng cookie httpOnly, thư viện ảnh (upload, copy link, xoá, quota), cập nhật quota/khoá user theo thời gian thực (SSE), trang Users cho admin (đổi quota, khoá/mở user) (bước C-F).
 - Schema nhiều tenant (migration 002): gói > account > project > thành viên, API key, alias, ảnh nháp/xuất bản. API mới dùng account/project mặc định cho mỗi user; chưa có endpoint cho project, thành viên hay API key.
 
 ## Kế hoạch
 
-- Giao diện admin (`apps/admin`, Vite + React + TypeScript): kéo thả upload, lấy link, quản lý user (bước C-G).
 - Giai đoạn 2: API project, thành viên, API key, ảnh nháp/xuất bản, upload hàng loạt (xem ADR `multi-tenant-projects-plans-api-keys` trong KB).
 
 ## Tồn đọng / giới hạn đã biết
@@ -115,6 +115,7 @@ Script upload từng ảnh, tải bản gốc/webp/avif ở chiều rộng `W`, 
 - Ảnh công khai nếu biết UUID; chưa có ảnh riêng tư.
 - Chưa có: rate limit, HTTPS, xác thực email, đổi mật khẩu, thu hồi session, ảnh gif/svg/heic.
 - Chưa có test tự động; kiểm thử hiện là script/curl thủ công.
+- Admin: `NEXT_PUBLIC_CDN_URL` nhúng lúc build (mặc định `http://localhost:8090`); trang Users và thư viện ảnh chưa phân trang; chưa đổi role hay xoá user trong giao diện.
 - Chưa đặt Cloudflare phía trước: cache key của Cloudflare phải tách theo định dạng (xem `infra/nginx/nginx.conf`, map `$img_fmt`).
 - Lưu trữ cục bộ một máy; lên production nên dùng object storage (S3/R2), tách control plane (tài khoản, quota, billing) và data plane (giao ảnh).
 - Bảng `images` / `used_bytes` sẽ lệch nếu xoá file hoặc volume bằng tay.
