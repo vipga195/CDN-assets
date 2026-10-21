@@ -33,6 +33,7 @@ services:
 
   api:
     build: ./apps/api
+    mem_limit: 1g
     environment:
       DB_CONN: Host=postgres;Database=imgcdn;Username=imgcdn;Password=${POSTGRES_PASSWORD}
       IMGPROXY_URL: http://imgproxy:8080

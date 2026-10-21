@@ -3,6 +3,9 @@ using static Http;
 using Npgsql;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Primitives;
+using Microsoft.Net.Http.Headers;
 
 static class ImageEndpoints
 {
@@ -16,95 +19,134 @@ static class ImageEndpoints
 
       // Must be set before the body is read.
       ctx.Features.Get<IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = ImgOptions.MaxUploadBytes + (1 << 20);
-      if (!ctx.Request.HasFormContentType) return Err(400, "multipart/form-data required");
+      if (!MediaTypeHeaderValue.TryParse(ctx.Request.ContentType, out var ct)
+          || !ct.MediaType.Equals("multipart/form-data", StringComparison.OrdinalIgnoreCase)
+          || StringSegment.IsNullOrEmpty(ct.Boundary))
+        return Err(400, "multipart/form-data required");
 
-      IFormFile? file;
-      try { file = (await ctx.Request.ReadFormAsync()).Files["file"]; }
-      catch (BadHttpRequestException) { return Err(413, "file too large"); }
-      catch (InvalidDataException) { return Err(400, "invalid form"); }
-      if (file is null || file.Length == 0) return Err(400, "field 'file' is required");
-      if (file.Length > ImgOptions.MaxUploadBytes) return Err(413, "file too large");
-
-      var data = new byte[file.Length];
-      await using (var s = file.OpenReadStream()) await s.ReadExactlyAsync(data);
-
-      // Trust the bytes, not the client-supplied content type or extension.
-      var meta = ImageInfo.Parse(data);
-      if (meta is null) return Err(415, "only png and jpeg are accepted");
-      var (mime, ext, w, h) = meta.Value;
-      if ((long)w * h > 50_000_000) return Err(400, "image too large (max 50 megapixels)");
-
+      const int HeaderBytes = 256 * 1024; // PNG IHDR and the usual JPEG headers (EXIF/ICC before SOF) fit here
       var id = Guid.NewGuid();
       var dir = Path.Combine(opt.UploadDir, uid.Value.ToString());
-      var path = Path.Combine(dir, $"{id}.{ext}");
-      var name = Path.GetFileName(file.FileName);          // stored in DB only, never used as a path
-      if (name.Length > 200) name = name[..200];
-
-      await using var conn = await db.OpenConnectionAsync();
-      await using var tx = await conn.BeginTransactionAsync();
-
-      // Atomic quota check: the row lock serializes concurrent uploads of the same user.
-
-      await using (var q = new NpgsqlCommand(
-          "UPDATE users SET used_bytes = used_bytes + $1 WHERE id = $2 AND used_bytes + $1 <= quota_bytes",
-          conn, tx))
-      {
-        q.Parameters.AddWithValue((long)data.Length);
-        q.Parameters.AddWithValue(uid.Value);
-        if (await q.ExecuteNonQueryAsync() == 0) return Err(413, "quota exceeded"); // tx rolls back on dispose
-      }
-
-      long projectId, accountId;
-      await using (var pq = new NpgsqlCommand(
-          "SELECT p.id, p.account_id FROM projects p JOIN accounts a ON a.id = p.account_id " +
-          "WHERE a.owner_user_id = $1 ORDER BY p.id LIMIT 1", conn, tx))
-      {
-        pq.Parameters.AddWithValue(uid.Value);
-        await using var pr = await pq.ExecuteReaderAsync();
-        if (!await pr.ReadAsync()) return Err(500, "user has no default project");
-        projectId = pr.GetInt64(0);
-        accountId = pr.GetInt64(1);
-      }
-
-      await using (var au = new NpgsqlCommand(
-          "UPDATE accounts SET used_bytes = used_bytes + $1 WHERE id = $2", conn, tx))
-      {
-        au.Parameters.AddWithValue((long)data.Length);
-        au.Parameters.AddWithValue(accountId);
-        await au.ExecuteNonQueryAsync();
-      }
-
-      await using (var ins = new NpgsqlCommand(
-          "INSERT INTO images (id, user_id, project_id, filename, mime, ext, size_bytes, width, height) " +
-          "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", conn, tx))
-      {
-        ins.Parameters.AddWithValue(id);
-        ins.Parameters.AddWithValue(uid.Value);
-        ins.Parameters.AddWithValue(projectId);
-        ins.Parameters.AddWithValue(name);
-        ins.Parameters.AddWithValue(mime);
-        ins.Parameters.AddWithValue(ext);
-        ins.Parameters.AddWithValue((long)data.Length);
-        ins.Parameters.AddWithValue(w);
-        ins.Parameters.AddWithValue(h);
-        await ins.ExecuteNonQueryAsync();
-      }
-      // Write the file before commit: if writing fails, the DB changes roll back and quota is untouched.
+      string? path = null, fileName = null;
+      ImgMeta meta = default;
+      long size = 0;
+      var committed = false;
       try
       {
-        Directory.CreateDirectory(dir);
-        await File.WriteAllBytesAsync(path, data);
-        await tx.CommitAsync();
-      }
-      catch
-      {
-        try { File.Delete(path); } catch { /* best effort */ }
-        throw;
-      }
+        // Stream the body: only the "file" part is read, never held whole in memory.
+        var reader = new MultipartReader(HeaderUtilities.RemoveQuotes(ct.Boundary).Value!, ctx.Request.Body);
+        MultipartSection? section;
+        while ((section = await reader.ReadNextSectionAsync(ctx.RequestAborted)) is not null)
+        {
+          if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var cd)
+              || !HeaderUtilities.RemoveQuotes(cd.Name).Equals("file", StringComparison.Ordinal)
+              || !cd.FileName.HasValue)
+            continue;
 
-      return Results.Json(new { id, width = w, height = h, size_bytes = data.Length, url = $"/i/{id}" },
-          statusCode: 201);
-    });
+          var head = new byte[HeaderBytes];
+          var n = 0;
+          while (n < head.Length)
+          {
+            var r = await section.Body.ReadAsync(head.AsMemory(n), ctx.RequestAborted);
+            if (r == 0) break;
+            n += r;
+          }
+          if (n == 0) return Err(400, "field 'file' is required");
+
+          // Trust the bytes, not the client-supplied content type or extension.
+          var parsed = ImageInfo.Parse(head[..n]);
+          if (parsed is null) return Err(415, "only png and jpeg are accepted");
+          meta = parsed.Value;
+          if ((long)meta.W * meta.H > 50_000_000) return Err(400, "image too large (max 50 megapixels)");
+
+          Directory.CreateDirectory(dir);
+          path = Path.Combine(dir, $"{id}.{meta.Ext}");
+          await using (var fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+          {
+            await fs.WriteAsync(head.AsMemory(0, n), ctx.RequestAborted);
+            size = n;
+            var buf = new byte[81920];
+            int r;
+            while ((r = await section.Body.ReadAsync(buf, ctx.RequestAborted)) > 0)
+            {
+              size += r;
+              if (size > ImgOptions.MaxUploadBytes) return Err(413, "file too large");
+              await fs.WriteAsync(buf.AsMemory(0, r), ctx.RequestAborted);
+            }
+          }
+          fileName = HeaderUtilities.RemoveQuotes(cd.FileName).Value;
+          break;
+        }
+        if (path is null) return Err(400, "field 'file' is required");
+
+        var name = Path.GetFileName(fileName ?? "");          // stored in DB only, never used as a path
+        if (name.Length > 200) name = name[..200];
+
+        await using var conn = await db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        // Atomic quota check: the row lock serializes concurrent uploads of the same user.
+        await using (var q = new NpgsqlCommand(
+            "UPDATE users SET used_bytes = used_bytes + $1 WHERE id = $2 AND used_bytes + $1 <= quota_bytes",
+            conn, tx))
+        {
+          q.Parameters.AddWithValue(size);
+          q.Parameters.AddWithValue(uid.Value);
+          if (await q.ExecuteNonQueryAsync() == 0) return Err(413, "quota exceeded"); // tx rolls back on dispose
+        }
+
+        long projectId, accountId;
+        await using (var pq = new NpgsqlCommand(
+            "SELECT p.id, p.account_id FROM projects p JOIN accounts a ON a.id = p.account_id " +
+            "WHERE a.owner_user_id = $1 ORDER BY p.id LIMIT 1", conn, tx))
+        {
+          pq.Parameters.AddWithValue(uid.Value);
+          await using var pr = await pq.ExecuteReaderAsync();
+          if (!await pr.ReadAsync()) return Err(500, "user has no default project");
+          projectId = pr.GetInt64(0);
+          accountId = pr.GetInt64(1);
+        }
+
+        await using (var au = new NpgsqlCommand(
+            "UPDATE accounts SET used_bytes = used_bytes + $1 WHERE id = $2", conn, tx))
+        {
+          au.Parameters.AddWithValue(size);
+          au.Parameters.AddWithValue(accountId);
+          await au.ExecuteNonQueryAsync();
+        }
+
+        await using (var ins = new NpgsqlCommand(
+            "INSERT INTO images (id, user_id, project_id, filename, mime, ext, size_bytes, width, height) " +
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", conn, tx))
+        {
+          ins.Parameters.AddWithValue(id);
+          ins.Parameters.AddWithValue(uid.Value);
+          ins.Parameters.AddWithValue(projectId);
+          ins.Parameters.AddWithValue(name);
+          ins.Parameters.AddWithValue(meta.Mime);
+          ins.Parameters.AddWithValue(meta.Ext);
+          ins.Parameters.AddWithValue(size);
+          ins.Parameters.AddWithValue(meta.W);
+          ins.Parameters.AddWithValue(meta.H);
+          await ins.ExecuteNonQueryAsync();
+        }
+        await tx.CommitAsync();
+        committed = true;
+
+        return Results.Json(new { id, width = meta.W, height = meta.H, size_bytes = size, url = $"/i/{id}" },
+            statusCode: 201);
+      }
+      catch (BadHttpRequestException) { return Err(413, "file too large"); }
+      catch (InvalidDataException) { return Err(400, "invalid form"); }
+      finally
+      {
+        // The file is written before the DB commit; anything but a commit removes it.
+        if (!committed && path is not null)
+        {
+          try { File.Delete(path); } catch { /* best effort */ }
+        }
+      }
+    }).RequireRateLimiting("upload");
 
     app.MapGet("/images", async (HttpContext ctx, NpgsqlDataSource db) =>
     {

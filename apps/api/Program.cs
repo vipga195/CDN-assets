@@ -7,6 +7,8 @@ using static AdminEndpoints;
 using static AuthEndpoints;
 using static ImageEndpoints;
 using static MeEndpoints;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 var imgproxyUrl = builder.Configuration["IMGPROXY_URL"]
@@ -24,7 +26,19 @@ builder.Services.AddSingleton<UserEvents>();
 builder.Services.AddSingleton<ImgOptions>();
 builder.Services.AddSingleton<ImgproxySigner>();
 
+builder.Services.AddRateLimiter(o =>
+{
+  o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+  o.AddConcurrencyLimiter("upload", c =>
+  {
+    c.PermitLimit = 8;
+    c.QueueLimit = 20;
+    c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+  });
+});
+
 var app = builder.Build();
+app.UseRateLimiter();
 
 var imgHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
