@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Npgsql;
 using Microsoft.AspNetCore.Http.Features;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 const long MaxUploadBytes = 20 * 1024 * 1024;
@@ -53,9 +54,22 @@ static async Task<long?> Auth(HttpContext ctx, NpgsqlDataSource db)
     var h = ctx.Request.Headers.Authorization.ToString();
     if (!h.StartsWith("Bearer ") || h.Length <= 7) return null;
     await using var cmd = db.CreateCommand(
-        "SELECT user_id FROM sessions WHERE token_hash = $1 AND expires_at > now()");
+        "SELECT s.user_id FROM sessions s JOIN users u ON u.id = s.user_id " +
+        "WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled");
     cmd.Parameters.AddWithValue(Sha256Hex(h[7..]));
     return await cmd.ExecuteScalarAsync() as long?;
+}
+
+// Returns (adminId, null) or (null, error result). Role is read from the DB on every call.
+static async Task<(long? uid, IResult? err)> RequireAdmin(HttpContext ctx, NpgsqlDataSource db)
+{
+    var uid = await Auth(ctx, db);
+    if (uid is null) return (null, Err(401, "invalid token"));
+    await using var cmd = db.CreateCommand("SELECT role FROM users WHERE id = $1");
+    cmd.Parameters.AddWithValue(uid.Value);
+    return (await cmd.ExecuteScalarAsync() as string) == "admin"
+        ? (uid, null)
+        : (null, Err(403, "admin only"));
 }
 
 app.MapGet("/healthz", () => "ok");
@@ -70,11 +84,29 @@ app.MapPost("/register", async (Creds c, NpgsqlDataSource db) =>
 
     try
     {
-        await using var cmd = db.CreateCommand(
-            "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id");
-        cmd.Parameters.AddWithValue(email);
-        cmd.Parameters.AddWithValue(BCrypt.Net.BCrypt.HashPassword(pw));
-        var id = (long)(await cmd.ExecuteScalarAsync())!;
+        await using var conn = await db.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        long id;
+        await using (var cmd = new NpgsqlCommand(
+            "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id", conn, tx))
+        {
+            cmd.Parameters.AddWithValue(email);
+            cmd.Parameters.AddWithValue(BCrypt.Net.BCrypt.HashPassword(pw));
+            id = (long)(await cmd.ExecuteScalarAsync())!;
+        }
+
+        // Every new user gets one account, one "Default" project, and is its admin.
+        await using (var org = new NpgsqlCommand(
+            "WITH a AS (INSERT INTO accounts (owner_user_id, plan_code) VALUES ($1, 'default') RETURNING id), " +
+            "p AS (INSERT INTO projects (account_id, name) SELECT id, 'Default' FROM a RETURNING id) " +
+            "INSERT INTO project_members (project_id, user_id, role) SELECT id, $1, 'admin' FROM p", conn, tx))
+        {
+            org.Parameters.AddWithValue(id);
+            await org.ExecuteNonQueryAsync();
+        }
+
+        await tx.CommitAsync();
         return Results.Json(new { id, email }, statusCode: 201);
     }
     catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -90,11 +122,12 @@ app.MapPost("/login", async (Creds c, NpgsqlDataSource db) =>
 
     long id = 0;
     string? hash = null;
-    await using (var cmd = db.CreateCommand("SELECT id, password_hash FROM users WHERE email = $1"))
+    bool disabled = false;
+    await using (var cmd = db.CreateCommand("SELECT id, password_hash, disabled FROM users WHERE email = $1"))
     {
         cmd.Parameters.AddWithValue(email);
         await using var r = await cmd.ExecuteReaderAsync();
-        if (await r.ReadAsync()) { id = r.GetInt64(0); hash = r.GetString(1); }
+        if (await r.ReadAsync()) { id = r.GetInt64(0); hash = r.GetString(1); disabled = r.GetBoolean(2); }
     }
 
     if (hash is null)
@@ -103,6 +136,7 @@ app.MapPost("/login", async (Creds c, NpgsqlDataSource db) =>
         return Err(401, "invalid credentials");
     }
     if (!BCrypt.Net.BCrypt.Verify(pw, hash)) return Err(401, "invalid credentials");
+    if (disabled) return Err(403, "account disabled");
 
     var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
     // Only the hash is stored, so a DB leak does not expose usable tokens.
@@ -121,11 +155,11 @@ app.MapGet("/me", async (HttpContext ctx, NpgsqlDataSource db) =>
     if (uid is null) return Err(401, "invalid token");
 
     await using var cmd = db.CreateCommand(
-        "SELECT email, quota_bytes, used_bytes FROM users WHERE id = $1");
+        "SELECT email, quota_bytes, used_bytes, role FROM users WHERE id = $1");
     cmd.Parameters.AddWithValue(uid.Value);
     await using var r = await cmd.ExecuteReaderAsync();
     if (!await r.ReadAsync()) return Err(401, "invalid token");
-    return Results.Json(new { email = r.GetString(0), quota_bytes = r.GetInt64(1), used_bytes = r.GetInt64(2) });
+    return Results.Json(new { email = r.GetString(0), quota_bytes = r.GetInt64(1), used_bytes = r.GetInt64(2), role = r.GetString(3) });
 });
 
 app.MapPost("/upload", async (HttpContext ctx, NpgsqlDataSource db) =>
@@ -163,6 +197,7 @@ app.MapPost("/upload", async (HttpContext ctx, NpgsqlDataSource db) =>
     await using var tx = await conn.BeginTransactionAsync();
 
     // Atomic quota check: the row lock serializes concurrent uploads of the same user.
+
     await using (var q = new NpgsqlCommand(
         "UPDATE users SET used_bytes = used_bytes + $1 WHERE id = $2 AND used_bytes + $1 <= quota_bytes",
         conn, tx))
@@ -172,12 +207,33 @@ app.MapPost("/upload", async (HttpContext ctx, NpgsqlDataSource db) =>
         if (await q.ExecuteNonQueryAsync() == 0) return Err(413, "quota exceeded"); // tx rolls back on dispose
     }
 
+    long projectId, accountId;
+    await using (var pq = new NpgsqlCommand(
+        "SELECT p.id, p.account_id FROM projects p JOIN accounts a ON a.id = p.account_id " +
+        "WHERE a.owner_user_id = $1 ORDER BY p.id LIMIT 1", conn, tx))
+    {
+        pq.Parameters.AddWithValue(uid.Value);
+        await using var pr = await pq.ExecuteReaderAsync();
+        if (!await pr.ReadAsync()) return Err(500, "user has no default project");
+        projectId = pr.GetInt64(0);
+        accountId = pr.GetInt64(1);
+    }
+
+    await using (var au = new NpgsqlCommand(
+        "UPDATE accounts SET used_bytes = used_bytes + $1 WHERE id = $2", conn, tx))
+    {
+        au.Parameters.AddWithValue((long)data.Length);
+        au.Parameters.AddWithValue(accountId);
+        await au.ExecuteNonQueryAsync();
+    }
+
     await using (var ins = new NpgsqlCommand(
-        "INSERT INTO images (id, user_id, filename, mime, ext, size_bytes, width, height) " +
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", conn, tx))
+        "INSERT INTO images (id, user_id, project_id, filename, mime, ext, size_bytes, width, height) " +
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", conn, tx))
     {
         ins.Parameters.AddWithValue(id);
         ins.Parameters.AddWithValue(uid.Value);
+        ins.Parameters.AddWithValue(projectId);
         ins.Parameters.AddWithValue(name);
         ins.Parameters.AddWithValue(mime);
         ins.Parameters.AddWithValue(ext);
@@ -186,7 +242,6 @@ app.MapPost("/upload", async (HttpContext ctx, NpgsqlDataSource db) =>
         ins.Parameters.AddWithValue(h);
         await ins.ExecuteNonQueryAsync();
     }
-
     // Write the file before commit: if writing fails, the DB changes roll back and quota is untouched.
     try
     {
@@ -218,8 +273,12 @@ app.MapGet("/images", async (HttpContext ctx, NpgsqlDataSource db) =>
     while (await r.ReadAsync())
         list.Add(new
         {
-            id = r.GetGuid(0), filename = r.GetString(1), size_bytes = r.GetInt64(2),
-            width = r.GetInt32(3), height = r.GetInt32(4), created_at = r.GetDateTime(5)
+            id = r.GetGuid(0),
+            filename = r.GetString(1),
+            size_bytes = r.GetInt64(2),
+            width = r.GetInt32(3),
+            height = r.GetInt32(4),
+            created_at = r.GetDateTime(5)
         });
     return Results.Json(list);
 });
@@ -279,9 +338,9 @@ app.MapDelete("/images/{id:guid}", async (Guid id, HttpContext ctx, NpgsqlDataSo
     await using var tx = await conn.BeginTransactionAsync();
 
     // The user_id condition makes other users' images look like "not found".
-    long size; string ext;
+    long size, projectId; string ext;
     await using (var del = new NpgsqlCommand(
-        "DELETE FROM images WHERE id = $1 AND user_id = $2 RETURNING size_bytes, ext", conn, tx))
+        "DELETE FROM images WHERE id = $1 AND user_id = $2 RETURNING size_bytes, ext, project_id", conn, tx))
     {
         del.Parameters.AddWithValue(id);
         del.Parameters.AddWithValue(uid.Value);
@@ -289,6 +348,7 @@ app.MapDelete("/images/{id:guid}", async (Guid id, HttpContext ctx, NpgsqlDataSo
         if (!await r.ReadAsync()) return Err(404, "not found");
         size = r.GetInt64(0);
         ext = r.GetString(1);
+        projectId = r.GetInt64(2);
     }
 
     await using (var upd = new NpgsqlCommand(
@@ -297,6 +357,15 @@ app.MapDelete("/images/{id:guid}", async (Guid id, HttpContext ctx, NpgsqlDataSo
         upd.Parameters.AddWithValue(size);
         upd.Parameters.AddWithValue(uid.Value);
         await upd.ExecuteNonQueryAsync();
+    }
+
+    await using (var acc = new NpgsqlCommand(
+    "UPDATE accounts SET used_bytes = GREATEST(used_bytes - $1, 0) " +
+    "WHERE id = (SELECT account_id FROM projects WHERE id = $2)", conn, tx))
+    {
+        acc.Parameters.AddWithValue(size);
+        acc.Parameters.AddWithValue(projectId);
+        await acc.ExecuteNonQueryAsync();
     }
     await tx.CommitAsync();
 
@@ -308,6 +377,73 @@ app.MapDelete("/images/{id:guid}", async (Guid id, HttpContext ctx, NpgsqlDataSo
     return Results.NoContent();
 });
 
+app.MapGet("/admin/users", async (HttpContext ctx, NpgsqlDataSource db) =>
+{
+    var (_, err) = await RequireAdmin(ctx, db);
+    if (err is not null) return err;
+
+    await using var cmd = db.CreateCommand(
+        "SELECT id, email, role, disabled, quota_bytes, used_bytes, created_at FROM users ORDER BY id");
+    await using var r = await cmd.ExecuteReaderAsync();
+    var list = new List<object>();
+    while (await r.ReadAsync())
+        list.Add(new
+        {
+            id = r.GetInt64(0),
+            email = r.GetString(1),
+            role = r.GetString(2),
+            disabled = r.GetBoolean(3),
+            quota_bytes = r.GetInt64(4),
+            used_bytes = r.GetInt64(5),
+            created_at = r.GetDateTime(6)
+        });
+    return Results.Json(list);
+});
+
+app.MapPatch("/admin/users/{id:long}", async (long id, UserPatch p, HttpContext ctx, NpgsqlDataSource db) =>
+{
+    var (adminId, err) = await RequireAdmin(ctx, db);
+    if (err is not null) return err;
+    if (p.QuotaBytes is null && p.Disabled is null) return Err(400, "nothing to update");
+    if (p.QuotaBytes < 0) return Err(400, "quota_bytes must be >= 0");
+    if (id == adminId && p.Disabled == true) return Err(400, "cannot disable yourself");
+
+    await using var conn = await db.OpenConnectionAsync();
+    await using var tx = await conn.BeginTransactionAsync();
+
+    await using (var upd = new NpgsqlCommand(
+        "UPDATE users SET quota_bytes = COALESCE($1, quota_bytes), disabled = COALESCE($2, disabled) WHERE id = $3",
+        conn, tx))
+    {
+        upd.Parameters.AddWithValue((object?)p.QuotaBytes ?? DBNull.Value);
+        upd.Parameters.AddWithValue((object?)p.Disabled ?? DBNull.Value);
+        upd.Parameters.AddWithValue(id);
+        if (await upd.ExecuteNonQueryAsync() == 0) return Err(404, "user not found");
+    }
+
+    // Keep the new account quota in sync until /upload reads from accounts.
+    if (p.QuotaBytes is not null)
+    {
+        await using var acc = new NpgsqlCommand(
+            "UPDATE accounts SET quota_override_bytes = $1 WHERE owner_user_id = $2", conn, tx);
+        acc.Parameters.AddWithValue(p.QuotaBytes.Value);
+        acc.Parameters.AddWithValue(id);
+        await acc.ExecuteNonQueryAsync();
+    }
+
+    // Disabling also kills existing sessions.
+    if (p.Disabled == true)
+    {
+        await using var del = new NpgsqlCommand("DELETE FROM sessions WHERE user_id = $1", conn, tx);
+        del.Parameters.AddWithValue(id);
+        await del.ExecuteNonQueryAsync();
+    }
+
+    await tx.CommitAsync();
+    return Results.NoContent();
+});
+
 app.Run();
 
 record Creds(string? Email, string? Password);
+record UserPatch([property: JsonPropertyName("quota_bytes")] long? QuotaBytes, bool? Disabled);
