@@ -3,3 +3,5 @@ bin/
 obj/
 .DS_Store
 /personal/
+node_modules/
+.next/
