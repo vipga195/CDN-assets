@@ -48,6 +48,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+  
+  admin:
+    build:
+      context: ./apps/admin
+      args:
+        NEXT_PUBLIC_CDN_URL: http://localhost:8090
+    environment:
+      API_URL: http://api:8080
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
 
   nginx:
     image: nginx:1.27-alpine

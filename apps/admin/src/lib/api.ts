@@ -21,3 +21,24 @@ export async function getMe(): Promise<Me | null> {
   })
   return res.ok ? ((await res.json()) as Me) : null
 }
+
+export const CDN_URL = process.env.NEXT_PUBLIC_CDN_URL ?? 'http://localhost:8090'
+
+export type Img = {
+  id: string
+  filename: string
+  size_bytes: number
+  width: number
+  height: number
+  created_at: string
+}
+
+export async function getImages(): Promise<Img[]> {
+  const token = (await cookies()).get(COOKIE)?.value
+  if (!token) return []
+  const res = await fetch(`${API_URL}/images`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  })
+  return res.ok ? ((await res.json()) as Img[]) : []
+}

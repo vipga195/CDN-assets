@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { login } from './actions'
+import { login } from '../../components/login/actions'
 
 export default function LoginPage() {
   const [error, action, pending] = useActionState(login, null)
