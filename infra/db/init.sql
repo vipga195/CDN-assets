@@ -4,6 +4,8 @@ CREATE TABLE users (
   password_hash TEXT NOT NULL,
   quota_bytes BIGINT NOT NULL DEFAULT 53687091200, -- 50GB
   used_bytes BIGINT NOT NULL DEFAULT 0 CHECK (used_bytes >= 0),
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+  disabled BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

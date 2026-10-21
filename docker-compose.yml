@@ -7,7 +7,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./infra/db/migrations/002_roles_and_multitenant.sql:/docker-entrypoint-initdb.d/002_roles_and_multitenant.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U imgcdn"]
       interval: 3s
@@ -31,7 +32,8 @@ services:
           create_host_path: false
 
   api:
-    build: ./api
+    build: ./apps/api
+    mem_limit: 1g
     environment:
       DB_CONN: Host=postgres;Database=imgcdn;Username=imgcdn;Password=${POSTGRES_PASSWORD}
       IMGPROXY_URL: http://imgproxy:8080
@@ -47,13 +49,34 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+  
+  admin:
+    build:
+      context: ./apps/admin
+      args:
+        NEXT_PUBLIC_CDN_URL: https://cdn.cocahome.click
+        SITE_URL: https://cms.cocahome.click
+    environment:
+      API_URL: http://api:8080
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
 
   nginx:
     image: nginx:1.27-alpine
     ports: ["8090:80"]
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on: [api]
+    networks:
+      default:
+      cloudflare:
+        aliases: [imgcdn-nginx]
+
+networks:
+  cloudflare:
+    external: true
+    name: cloudflare_default
 
 volumes:
   pgdata:
