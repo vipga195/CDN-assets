@@ -19,14 +19,14 @@ export async function login(_prev: string | null, form: FormData): Promise<strin
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    path: '/admin',
+    path: '/',
     maxAge: 7 * 24 * 3600, // matches the 7-day session in the API
   })
-  redirect('/')
+  redirect('/assets')
 }
 
 export async function logout() {
   ;(await cookies()).delete(COOKIE)
-  ;(await cookies()).set(COOKIE, '', { path: '/admin', maxAge: 0 })
+  ;(await cookies()).set(COOKIE, '', { path: '/', maxAge: 0 })
   redirect('/login')
 }

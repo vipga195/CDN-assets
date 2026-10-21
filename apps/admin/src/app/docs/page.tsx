@@ -6,8 +6,7 @@ import { SITE_URL } from '../../lib/site'
 const TITLE = 'Hướng dẫn sử dụng'
 const DESCRIPTION = 'Tải ảnh lên và lấy link ảnh đã tối ưu (avif, webp) với imgcdn.'
 
-// Public page: overrides the root layout's noindex. Canonical is /docs (served by nginx),
-// not /admin/docs, which stays reachable but must not compete in search.
+// Public page: overrides the root layout's noindex. Canonical is /docs.
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,

@@ -23,7 +23,7 @@ export async function upload(_prev: string | null, form: FormData): Promise<stri
     const msg = (await res.json().catch(() => null))?.error
     return msg ?? `Upload lỗi (${res.status})`
   }
-  revalidatePath('/')
+  revalidatePath('/assets')
   return null
 }
 
@@ -31,5 +31,5 @@ export async function remove(id: string) {
   const headers = await auth()
   if (!headers) return
   await fetch(`${API_URL}/images/${encodeURIComponent(id)}`, { method: 'DELETE', headers, cache: 'no-store' })
-  revalidatePath('/')
+  revalidatePath('/assets')
 }

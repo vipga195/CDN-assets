@@ -8,7 +8,7 @@ export default function MeEvents() {
   const router = useRouter()
 
   useEffect(() => {
-    const es = new EventSource('/admin/api/me/events') // basePath is not added automatically
+    const es = new EventSource('/api/me/events')
     es.addEventListener('me_changed', () => router.refresh())
     es.onopen = () => router.refresh() // resync after (re)connect
     es.onerror = () => {
