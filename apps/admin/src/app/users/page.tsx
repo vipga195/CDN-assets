@@ -9,6 +9,15 @@ export default async function UsersPage() {
   if (me.role !== 'admin') redirect('/')
   const users = await getUsers()
 
+  if (!users) {
+    return (
+      <div>
+        <Link href="/">Thư viện ảnh</Link>
+        <p>Không tải được danh sách user</p>
+      </div>
+    )
+  }
+
   return (
     <div>
       <Link href="/">Thư viện ảnh</Link>

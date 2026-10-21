@@ -53,12 +53,13 @@ export async function getImages(): Promise<Img[]> {
   return res.ok ? ((await res.json()) as Img[]) : []
 }
 
-export async function getUsers(): Promise<AdminUser[]> {
+// Returns null when there is no cookie or the API call fails.
+export async function getUsers(): Promise<AdminUser[] | null> {
   const token = (await cookies()).get(COOKIE)?.value
-  if (!token) return []
+  if (!token) return null
   const res = await fetch(`${API_URL}/admin/users`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   })
-  return res.ok ? ((await res.json()) as AdminUser[]) : []
+  return res.ok ? ((await res.json()) as AdminUser[]) : null
 }
