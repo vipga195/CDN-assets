@@ -1,12 +1,19 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { CDN_URL } from '../../lib/api'
+import { SITE_URL } from '../../lib/site'
 
-// Public page: overrides the root layout's noindex.
+const TITLE = 'Hướng dẫn sử dụng'
+const DESCRIPTION = 'Tải ảnh lên và lấy link ảnh đã tối ưu (avif, webp) với imgcdn.'
+
+// Public page: overrides the root layout's noindex. Canonical is /docs (served by nginx),
+// not /admin/docs, which stays reachable but must not compete in search.
 export const metadata: Metadata = {
-  title: 'imgcdn - Hướng dẫn sử dụng',
-  description: 'Tải ảnh lên và lấy link ảnh đã tối ưu (avif, webp) với imgcdn.',
+  title: TITLE,
+  description: DESCRIPTION,
   robots: { index: true },
+  alternates: { canonical: `${SITE_URL}/docs` },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: `${SITE_URL}/docs`, siteName: 'imgcdn', type: 'website' },
 }
 
 const WIDTHS = [64, 128, 256, 512, 1024, 2048]

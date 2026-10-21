@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { getMe, getUsers } from '../../lib/api'
 import UserRow from '../../components/user-row'
 
+export const metadata = { title: 'Quản lý user' }
+
 export default async function UsersPage() {
   const me = await getMe()
   if (!me) redirect('/login')

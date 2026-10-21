@@ -55,6 +55,7 @@ services:
       context: ./apps/admin
       args:
         NEXT_PUBLIC_CDN_URL: http://localhost:8090
+        SITE_URL: http://localhost:8090
     environment:
       API_URL: http://api:8080
     restart: unless-stopped

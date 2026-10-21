@@ -6,6 +6,8 @@ import { logout } from '../components/login/actions'
 import MeEvents from '../components/me-events'
 import Link from 'next/link'
 
+export const metadata = { title: 'Thư viện ảnh' }
+
 export default async function Home() {
   const me = await getMe()
   if (!me) redirect('/login')
