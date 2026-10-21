@@ -4,6 +4,7 @@ import ImageCard from '../components/image-card'
 import UploadForm from '../components/upload-form'
 import { logout } from '../components/login/actions'
 import MeEvents from '../components/me-events'
+import Link from 'next/link'
 
 export default async function Home() {
   const me = await getMe()
@@ -15,6 +16,7 @@ export default async function Home() {
       <p>
         {me.email} ({me.role}) - {me.used_bytes}/{me.quota_bytes} byte
       </p>
+      {me.role === 'admin' && <Link href="/users">Quản lý user</Link>}
       <form action={logout}>
         <button>Đăng xuất</button>
       </form>

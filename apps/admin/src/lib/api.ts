@@ -33,6 +33,16 @@ export type Img = {
   created_at: string
 }
 
+export type AdminUser = {
+  id: number
+  email: string
+  role: 'user' | 'admin'
+  disabled: boolean
+  quota_bytes: number
+  used_bytes: number
+  created_at: string
+}
+
 export async function getImages(): Promise<Img[]> {
   const token = (await cookies()).get(COOKIE)?.value
   if (!token) return []
@@ -41,4 +51,14 @@ export async function getImages(): Promise<Img[]> {
     cache: 'no-store',
   })
   return res.ok ? ((await res.json()) as Img[]) : []
+}
+
+export async function getUsers(): Promise<AdminUser[]> {
+  const token = (await cookies()).get(COOKIE)?.value
+  if (!token) return []
+  const res = await fetch(`${API_URL}/admin/users`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  })
+  return res.ok ? ((await res.json()) as AdminUser[]) : []
 }
