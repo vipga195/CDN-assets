@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { patchUser } from './users/actions'
-import type { AdminUser } from '../lib/api'
+import type { AdminUser } from '../services/lib/api'
 
 const GB = 1024 ** 3
 

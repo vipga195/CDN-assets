@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { SITE_URL } from '../lib/site'
+import { SITE_URL } from '../services/lib/site'
 
 const TITLE = 'imgcdn - tải ảnh một lần, nhận link ảnh tối ưu'
 const DESCRIPTION = 'Tải ảnh PNG/JPEG lên một lần, nhận link ảnh đã resize và đổi định dạng avif, webp.'

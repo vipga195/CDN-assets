@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { CDN_URL, PAGE_SIZE, getImages, getMe } from '../../lib/api'
+import { CDN_URL, PAGE_SIZE, getImages, getMe } from '../../services/lib/api'
 import ImageCard from '../../components/image-card'
 import UploadForm from '../../components/upload-form'
 import { logout } from '../../components/login/actions'

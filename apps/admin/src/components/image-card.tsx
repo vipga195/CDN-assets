@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { remove } from './actions'
-import type { Img } from '../lib/api'
+import type { Img } from '../services/lib/api'
 
 const WIDTHS = [64, 128, 256, 512, 1024, 2048]
 const FORMATS = ['', 'avif', 'webp', 'orig'] // '' = follow the viewer's Accept

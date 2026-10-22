@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { CDN_URL } from '../../lib/api'
-import { SITE_URL } from '../../lib/site'
+import { CDN_URL } from '../../services/lib/api'
+import { SITE_URL } from '../../services/lib/site'
 
 const TITLE = 'Hướng dẫn sử dụng'
 const DESCRIPTION = 'Tải ảnh lên và lấy link ảnh đã tối ưu (avif, webp) với imgcdn.'
