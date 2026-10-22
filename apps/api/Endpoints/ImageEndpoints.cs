@@ -148,15 +148,37 @@ static class ImageEndpoints
       }
     }).RequireRateLimiting("upload");
 
-    app.MapGet("/images", async (HttpContext ctx, NpgsqlDataSource db) =>
+    app.MapGet("/images", async (HttpContext ctx, NpgsqlDataSource db, int? limit, string? before_created, Guid? before_id) =>
     {
       var uid = await Auth(ctx, db);
       if (uid is null) return Err(401, "invalid token");
 
+      var n = Math.Clamp(limit ?? 100, 1, 100);
+
+      // The cursor is (created_at, id) of the last item on the previous page; both parts are required.
+      DateTime? cur = null;
+      if (before_created is not null || before_id is not null)
+      {
+        if (before_id is null || !DateTime.TryParse(before_created, null,
+              System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var t))
+          return Err(400, "invalid cursor");
+        cur = t;
+      }
+
+      await using (var cnt = db.CreateCommand("SELECT count(*) FROM images WHERE user_id = $1"))
+      {
+        cnt.Parameters.AddWithValue(uid.Value);
+        ctx.Response.Headers["X-Total-Count"] = ((long)(await cnt.ExecuteScalarAsync())!).ToString();
+      }
+
       await using var cmd = db.CreateCommand(
           "SELECT id, filename, size_bytes, width, height, created_at FROM images " +
-          "WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100");
+          "WHERE user_id = $1 AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3)) " +
+          "ORDER BY created_at DESC, id DESC LIMIT $4");
       cmd.Parameters.AddWithValue(uid.Value);
+      cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)cur ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz });
+      cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)before_id ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+      cmd.Parameters.AddWithValue(n);
       await using var r = await cmd.ExecuteReaderAsync();
       var list = new List<object>();
       while (await r.ReadAsync())
@@ -171,7 +193,7 @@ static class ImageEndpoints
         });
       return Results.Json(list);
     });
-
+    
     app.MapGet("/i/{id:guid}", async (Guid id, int? w, string? fmt, HttpContext ctx, NpgsqlDataSource db, ImgOptions opt, ImgproxySigner signer) =>
     {
       long userId = 0; string srcExt = ""; int srcW = 0, srcH = 0;

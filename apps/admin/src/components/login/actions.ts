@@ -26,7 +26,19 @@ export async function login(_prev: string | null, form: FormData): Promise<strin
 }
 
 export async function logout() {
-  ;(await cookies()).delete(COOKIE)
-  ;(await cookies()).set(COOKIE, '', { path: '/', maxAge: 0 })
+  const store = await cookies()
+  const token = store.get(COOKIE)?.value
+  if (token) {
+    try {
+      await fetch(`${API_URL}/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      })
+    } catch {
+      // API unreachable: still clear the cookie; the session expires on its own.
+    }
+  }
+  store.set(COOKIE, '', { path: '/', maxAge: 0 })
   redirect('/login')
 }
