@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getMe, getUsers } from '../../lib/api'
+import { getMe, getUsers } from '../../services/lib/api'
 import UserRow from '../../components/user-row'
 
 export const metadata = { title: 'Quản lý user' }

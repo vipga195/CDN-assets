@@ -2,7 +2,7 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { API_URL, COOKIE } from '../../lib/api'
+import { API_URL, COOKIE } from '../../services/lib/api'
 
 export async function login(_prev: string | null, form: FormData): Promise<string | null> {
   const res = await fetch(`${API_URL}/login`, {

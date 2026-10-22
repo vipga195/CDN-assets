@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers'
-import { API_URL, COOKIE } from '../../../../lib/api'
+import { API_URL, COOKIE } from '../../../../services/lib/api'
 
 // Fixed-path stream proxy: adds the Bearer token from the httpOnly cookie.
 export async function GET(request: Request) {

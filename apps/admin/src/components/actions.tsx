@@ -3,7 +3,7 @@
 
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
-import { API_URL, COOKIE } from '../lib/api'
+import { API_URL, COOKIE } from '../services/lib/api'
 
 async function auth() {
   const token = (await cookies()).get(COOKIE)?.value
