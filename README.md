@@ -81,6 +81,7 @@ docker compose exec -T postgres psql -U imgcdn -d imgcdn \
 
 - Không phóng to: chiều rộng ra = min(`w`, chiều rộng gốc).
 - Ảnh nhỏ (cạnh dài <= `SMALL_MAX_SIDE`): scale `SMALL_SCALE`, quality `SMALL_QUALITY`; ảnh khác dùng `NORMAL_QUALITY`; avif thấp hơn 10.
+- Giới hạn AVIF: ảnh đầu ra có cạnh dưới khoảng 16px (đo 2026-10-21: cạnh 15px ra JPEG, 18px ra AVIF; chưa thử 16 và 17px) thì imgproxy trả `image/jpeg` dù yêu cầu `fmt=avif` hoặc `Accept: image/avif`. Phản hồi vẫn `200` và `Content-Type` đúng với nội dung nên trình duyệt hiển thị bình thường; chưa tìm ra nguyên nhân bên trong imgproxy.
 - Cấu hình (biến môi trường của `api`, có mặc định): `SMALL_MAX_SIDE=512`, `SMALL_QUALITY=60`, `SMALL_SCALE=0.75`, `NORMAL_QUALITY=80`.
 - Header phản hồi: `X-Cache` (nginx), `X-Small-Image`, `Cache-Control: public, max-age=31536000, immutable`.
 
