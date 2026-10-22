@@ -83,5 +83,16 @@ static class AuthEndpoints
       await ins.ExecuteNonQueryAsync();
       return Results.Json(new { token });
     });
+  
+    // Idempotent: unknown or expired tokens also return 204.
+    app.MapPost("/logout", async (HttpContext ctx, NpgsqlDataSource db) =>
+    {
+      var h = ctx.Request.Headers.Authorization.ToString();
+      if (!h.StartsWith("Bearer ") || h.Length <= 7) return Err(401, "invalid token");
+      await using var cmd = db.CreateCommand("DELETE FROM sessions WHERE token_hash = $1");
+      cmd.Parameters.AddWithValue(Sha256Hex(h[7..]));
+      await cmd.ExecuteNonQueryAsync();
+      return Results.NoContent();
+    });
   }
 }
