@@ -58,6 +58,7 @@ function keepEntry(res: Res<Entry>): Res<Entry> {
 }
 
 export const cms = {
+  reload: refresh,
   // Returns an error message, or null on success.
   async saveType(t: ContentType, isNew: boolean): Promise<string | null> {
     const res = await api.saveType(t, isNew)

@@ -101,6 +101,17 @@ export default function EntryEditor({ entryId, newTypeId, images, cdn }: Props) 
     else setServerError(res.error)
   }
 
+  // Drops local edits and re-initialises the draft from the freshly loaded server copy.
+  async function reload(): Promise<void> {
+    setBusy(true)
+    await cms.reload()
+    setDraft(null)
+    setErrors({})
+    setServerError(null)
+    setMessage(null)
+    setBusy(false)
+  }
+
   async function remove(): Promise<void> {
     if (!confirm('Xoá entry này?')) return
     setServerError(null)
@@ -149,6 +160,9 @@ export default function EntryEditor({ entryId, newTypeId, images, cdn }: Props) 
             {stored && <p className="text-xs text-slate-500">Cập nhật {new Date(stored.updatedAt).toLocaleString('vi-VN')}</p>}
             {Object.keys(errors).length > 0 && <Alert>Có {Object.keys(errors).length} lỗi cần sửa</Alert>}
             {serverError && <Alert>{serverError}</Alert>}
+            {serverError && stored && (
+              <Button className="w-full" variant="secondary" disabled={busy} onClick={reload}>Tải lại bản mới nhất</Button>
+            )}
             {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
             <Button className="w-full" disabled={busy} onClick={() => save(true)}>{status === 'published' ? 'Publish lại' : 'Publish'}</Button>
             <Button className="w-full" variant="secondary" disabled={busy} onClick={() => save(false)}>Lưu nháp</Button>
