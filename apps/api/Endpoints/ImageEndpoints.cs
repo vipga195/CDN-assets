@@ -193,8 +193,8 @@ static class ImageEndpoints
         });
       return Results.Json(list);
     });
-    
-    app.MapGet("/i/{id:guid}", async (Guid id, int? w, string? fmt, HttpContext ctx, NpgsqlDataSource db, ImgOptions opt, ImgproxySigner signer) =>
+
+    app.MapGet("/i/{id:guid}", async (Guid id, int? w, int? h, int? q, string? fit, string? fm, string? fmt, HttpContext ctx, NpgsqlDataSource db, ImgOptions opt, ImgproxySigner signer) =>
     {
       long userId = 0; string srcExt = ""; int srcW = 0, srcH = 0;
       await using (var cmd = db.CreateCommand("SELECT user_id, ext, width, height FROM images WHERE id = $1"))
@@ -205,27 +205,33 @@ static class ImageEndpoints
         userId = r.GetInt64(0); srcExt = r.GetString(1); srcW = r.GetInt32(2); srcH = r.GetInt32(3);
       }
 
-      // Only whitelisted widths, so clients cannot create unlimited cache variants.
-      int[] allowed = [64, 128, 256, 512, 1024, 2048];
-      int target;
-      if (w is null) target = allowed.Where(a => a <= srcW).DefaultIfEmpty(allowed[0]).Max();
-      else if (!allowed.Contains(w.Value)) return Err(400, "w must be one of 64,128,256,512,1024,2048");
-      else target = w.Value;
-      target = Math.Min(target, srcW); // never upscale
+      fm ??= fmt; // keep the old ?fmt= working
+      const int Max = 4000;
+      if (w is < 1 or > Max) return Err(400, $"w must be 1-{Max}");
+      if (h is < 1 or > Max) return Err(400, $"h must be 1-{Max}");
+      if (q is < 1 or > 100) return Err(400, "q must be 1-100");
+      if (fit is not (null or "scale" or "crop" or "pad")) return Err(400, "fit must be scale, crop or pad");
+      if (fm is not (null or "avif" or "webp" or "orig")) return Err(400, "fm must be avif, webp or orig");
 
-      // Small images: shrink further and lower the quality.
-      bool small = Math.Max(srcW, srcH) <= opt.SmallMaxSide;
-      int outW = small ? Math.Max(1, (int)(target * opt.SmallScale)) : target;
-      int quality = small ? opt.SmallQuality : opt.NormalQuality;
+      // No upscaling; default width keeps the old behaviour.
+      int? ow = w is null && h is null ? Math.Min(1024, srcW) : (w is null ? null : Math.Min(w.Value, srcW));
+      int? oh = h is null ? null : Math.Min(h.Value, srcH);
 
-      // ?fmt= wins, otherwise the normalized Accept value that nginx sends in X-Img-Fmt.
-      var want = (fmt ?? ctx.Request.Headers["X-Img-Fmt"].ToString()).ToLowerInvariant();
-      if (fmt is not null && want is not ("avif" or "webp" or "orig"))
-        return Err(400, "fmt must be avif, webp or orig");
+      var resize = (ow, oh, fit) switch
+      {
+        (not null, not null, "crop") => $"/rs:fill:{ow}:{oh}",
+        (not null, not null, "pad") => $"/rs:fit:{ow}:{oh}/ex:1:ce",
+        (not null, not null, _) => $"/rs:force:{ow}:{oh}",       // scale
+        _ => $"/rs:fit:{ow ?? 0}:{oh ?? 0}",
+      };
+
+      int quality = q ?? opt.NormalQuality;
+      var want = (fm ?? ctx.Request.Headers["X-Img-Fmt"].ToString()).ToLowerInvariant();
       var outExt = want switch { "avif" => "avif", "webp" => "webp", _ => srcExt };
-      if (outExt == "avif") quality = Math.Max(1, quality - 10);
+      if (outExt == "avif" && q is null) quality = Math.Max(1, quality - 10);
 
-      var path = $"/rs:fit:{outW}:0/el:0/q:{quality}/plain/local:///{userId}/{id}.{srcExt}@{outExt}";
+      var path = $"{resize}/el:0/q:{quality}/plain/local:///{userId}/{id}.{srcExt}@{outExt}";
+
       using var resp = await imgHttp.GetAsync($"{opt.ProxyUrl}/{signer.Sign(path)}{path}");
       if (!resp.IsSuccessStatusCode)
       {
@@ -235,7 +241,6 @@ static class ImageEndpoints
 
       var bytes = await resp.Content.ReadAsByteArrayAsync();
       ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
-      ctx.Response.Headers["X-Small-Image"] = small ? "true" : "false";
       if (fmt is null) ctx.Response.Headers.Vary = "Accept";
       return Results.File(bytes, resp.Content.Headers.ContentType?.ToString() ?? "application/octet-stream");
     });
