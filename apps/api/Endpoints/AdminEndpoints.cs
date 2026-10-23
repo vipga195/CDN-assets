@@ -6,13 +6,24 @@ static class AdminEndpoints
   public static void MapAdmin(this WebApplication app)
   {
     var g = app.MapGroup("/admin");
-    g.MapGet("/users", async (HttpContext ctx, NpgsqlDataSource db) =>
+    g.MapGet("/users", async (HttpContext ctx, NpgsqlDataSource db, int? limit, long? after_id) =>
     {
       var (_, err) = await RequireAdmin(ctx, db);
       if (err is not null) return err;
 
+      var n = Math.Clamp(limit ?? 50, 1, 100);
+
+      await using (var cnt = db.CreateCommand("SELECT count(*) FROM users"))
+      {
+        ctx.Response.Headers["X-Total-Count"] = ((long)(await cnt.ExecuteScalarAsync())!).ToString();
+      }
+
+      // Keyset pagination on id; after_id is the id of the last user on the previous page.
       await using var cmd = db.CreateCommand(
-          "SELECT id, email, role, disabled, quota_bytes, used_bytes, created_at FROM users ORDER BY id");
+          "SELECT id, email, role, disabled, quota_bytes, used_bytes, created_at FROM users " +
+          "WHERE ($1::bigint IS NULL OR id > $1) ORDER BY id LIMIT $2");
+      cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)after_id ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bigint });
+      cmd.Parameters.AddWithValue(n);
       await using var r = await cmd.ExecuteReaderAsync();
       var list = new List<object>();
       while (await r.ReadAsync())
