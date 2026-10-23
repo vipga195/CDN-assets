@@ -13,7 +13,6 @@ const footerColumns = [
     links: [
       { href: "/login", label: "Đăng nhập" },
       { href: "/register", label: "Đăng ký" },
-      { href: "/users", label: "Người dùng" },
     ],
   },
   {
@@ -25,7 +24,7 @@ const footerColumns = [
   },
 ];
 
-export default function Footer() {
+export default function SiteFooter() {
   return (
     <footer className="w-full bg-slate-950 text-slate-300">
       <div className="max-w-360 w-full mx-auto px-6 py-16 grid grid-cols-2 md:grid-cols-5 gap-10">

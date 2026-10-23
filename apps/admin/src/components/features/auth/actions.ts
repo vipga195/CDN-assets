@@ -2,7 +2,7 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { API_URL, COOKIE } from '../../services/lib/api'
+import { API_URL, COOKIE } from '@/services/lib/api'
 
 export async function login(_prev: string | null, form: FormData): Promise<string | null> {
   const res = await fetch(`${API_URL}/login`, {
@@ -22,7 +22,19 @@ export async function login(_prev: string | null, form: FormData): Promise<strin
     path: '/',
     maxAge: 7 * 24 * 3600, // matches the 7-day session in the API
   })
-  redirect('/assets')
+  redirect('/content')
+}
+
+export async function register(_prev: string | null, form: FormData): Promise<string | null> {
+  const res = await fetch(`${API_URL}/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: form.get('email'), password: form.get('password') }),
+    cache: 'no-store',
+  })
+  if (res.status === 409) return 'Email đã được đăng ký'
+  if (!res.ok) return 'Email hợp lệ và mật khẩu 8-72 ký tự'
+  return login(null, form)
 }
 
 export async function logout() {
