@@ -3,7 +3,7 @@
 
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
-import { API_URL, COOKIE } from '../services/lib/api'
+import { API_URL, COOKIE } from '@/services/lib/api'
 
 async function auth() {
   const token = (await cookies()).get(COOKIE)?.value
@@ -27,9 +27,16 @@ export async function upload(_prev: string | null, form: FormData): Promise<stri
   return null
 }
 
-export async function remove(id: string) {
+// Returns an error message, or null on success (an already-deleted image counts as success).
+export async function remove(id: string): Promise<string | null> {
   const headers = await auth()
-  if (!headers) return
-  await fetch(`${API_URL}/images/${encodeURIComponent(id)}`, { method: 'DELETE', headers, cache: 'no-store' })
+  if (!headers) return 'Chưa đăng nhập'
+  try {
+    const res = await fetch(`${API_URL}/images/${encodeURIComponent(id)}`, { method: 'DELETE', headers, cache: 'no-store' })
+    if (!res.ok && res.status !== 404) return `Xoá lỗi (${res.status})`
+  } catch {
+    return 'Không kết nối được máy chủ'
+  }
   revalidatePath('/assets')
+  return null
 }

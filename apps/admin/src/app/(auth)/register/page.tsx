@@ -1,0 +1,8 @@
+import type { Metadata } from 'next'
+import RegisterForm from '@/components/features/auth/register-form'
+
+export const metadata: Metadata = { title: 'Đăng ký' }
+
+export default function RegisterPage() {
+  return <RegisterForm />
+}
