@@ -23,6 +23,8 @@ services:
       IMGPROXY_MAX_SRC_RESOLUTION: "50"
       IMGPROXY_MAX_SRC_FILE_SIZE: "20971520"
       IMGPROXY_AVIF_SPEED: "8"
+      IMGPROXY_CONCURRENCY: "4"
+      IMGPROXY_REQUESTS_QUEUE_SIZE: "50"
     volumes:
       - type: bind
         source: "/Volumes/Media 1/imgcdn-uploads"
