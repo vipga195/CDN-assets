@@ -84,11 +84,15 @@ static class EntryEndpoints
           $"VALUES ($1, $2, $3, $4, $4) RETURNING *) SELECT {Sel} FROM e JOIN content_types t ON t.id = e.content_type_id");
       cmd.Parameters.AddWithValue(pid);
       cmd.Parameters.AddWithValue(typeId);
-      cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = b.Values.GetRawText() });
+      cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = Prune(b.Values, fields) });
       cmd.Parameters.AddWithValue(uid);
-      await using var r = await cmd.ExecuteReaderAsync();
-      await r.ReadAsync();
-      return Results.Json(Row(r), statusCode: 201);
+      try
+      {
+        await using var r = await cmd.ExecuteReaderAsync();
+        await r.ReadAsync();
+        return Results.Json(Row(r), statusCode: 201);
+      }
+      catch (PostgresException e) when (e.SqlState == "22P05") { return Err(400, "values contain unsupported characters"); }
     });
 
     g.MapPut("/{id:guid}", async (Guid id, EntryBody b, HttpContext ctx, NpgsqlDataSource db) =>
@@ -110,11 +114,15 @@ static class EntryEndpoints
           $"WHERE id = $1 AND project_id = $2 AND version = $5 RETURNING *) SELECT {Sel} FROM e JOIN content_types t ON t.id = e.content_type_id");
       cmd.Parameters.AddWithValue(id);
       cmd.Parameters.AddWithValue(pid);
-      cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = b.Values.GetRawText() });
+      cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = Prune(b.Values, fields) });
       cmd.Parameters.AddWithValue(uid);
       cmd.Parameters.AddWithValue(b.Version.Value);
-      await using var r = await cmd.ExecuteReaderAsync();
-      return await r.ReadAsync() ? Results.Json(Row(r)) : Err(409, "version conflict, reload the entry");
+      try
+      {
+        await using var r = await cmd.ExecuteReaderAsync();
+        return await r.ReadAsync() ? Results.Json(Row(r)) : Err(409, "version conflict, reload the entry");
+      }
+      catch (PostgresException e) when (e.SqlState == "22P05") { return Err(400, "values contain unsupported characters"); }
     });
 
     g.MapDelete("/{id:guid}", async (Guid id, HttpContext ctx, NpgsqlDataSource db) =>
@@ -153,12 +161,13 @@ static class EntryEndpoints
       if (missing.Count > 0) return Err(400, "required fields missing: " + string.Join(", ", missing));
 
       await using var cmd = db.CreateCommand(
-          "WITH e AS (UPDATE entries SET published_data = data, published_at = updated_at " +
+          "WITH e AS (UPDATE entries SET data = $4, published_data = $4, published_at = updated_at " +
           "WHERE id = $1 AND project_id = $2 AND version = $3 RETURNING *) " +
           $"SELECT {Sel} FROM e JOIN content_types t ON t.id = e.content_type_id");
       cmd.Parameters.AddWithValue(id);
       cmd.Parameters.AddWithValue(pid);
       cmd.Parameters.AddWithValue(version);
+      cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = Prune(values, fields) });
       await using var r = await cmd.ExecuteReaderAsync();
       return await r.ReadAsync() ? Results.Json(Row(r)) : Err(409, "version conflict, reload the entry");
     });
@@ -221,7 +230,7 @@ static class EntryEndpoints
     var map = (JsonSerializer.Deserialize<List<FieldDto>>(fieldsJson, J) ?? []).ToDictionary(f => f.Id!);
     foreach (var p in values.EnumerateObject())
     {
-      if (!map.TryGetValue(p.Name, out var f)) return $"unknown field {p.Name}";
+      if (!map.TryGetValue(p.Name, out var f)) continue; // key of a removed field; dropped by Prune
       var v = p.Value;
       if (v.ValueKind == JsonValueKind.Null) continue;
       var bad = f.Type switch
@@ -248,6 +257,14 @@ static class EntryEndpoints
       }
     }
     return null;
+  }
+
+  // Keeps only keys that still exist in the content type, so removed fields cannot block save or publish.
+  static string Prune(JsonElement values, string fieldsJson)
+  {
+    var ids = (JsonSerializer.Deserialize<List<FieldDto>>(fieldsJson, J) ?? []).Select(f => f.Id!).ToHashSet();
+    var kept = values.EnumerateObject().Where(p => ids.Contains(p.Name)).ToDictionary(p => p.Name, p => p.Value);
+    return JsonSerializer.Serialize(kept);
   }
 
   static async Task<bool> Exists(NpgsqlDataSource db, string sql, params object[] args)

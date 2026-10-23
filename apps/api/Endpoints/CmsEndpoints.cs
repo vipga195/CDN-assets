@@ -70,6 +70,7 @@ static class CmsEndpoints
       if (err is not null) return err;
       if (!write) return Err(403, "read-only role");
       if (Validate(b) is { } msg) return Err(400, msg);
+      if (await TypeChangeBlocked(db, pid, id, b) is { } blocked) return Err(409, blocked);
       await using var cmd = db.CreateCommand(
           "UPDATE content_types SET name = $3, description = $4, display_field = $5, fields = $6, " +
           $"version = version + 1, updated_at = now() WHERE project_id = $1 AND api_id = $2 RETURNING {Cols}");
@@ -92,6 +93,21 @@ static class CmsEndpoints
       }
       catch (PostgresException e) when (e.SqlState == "23503") { return Err(409, "delete its entries first"); }
     });
+  }
+
+  // Changing the type of an existing field would invalidate stored values, so it is refused while entries exist.
+  static async Task<string?> TypeChangeBlocked(NpgsqlDataSource db, long pid, string apiId, TypeBody b)
+  {
+    await using var cmd = db.CreateCommand(
+        "SELECT t.fields::text, EXISTS (SELECT 1 FROM entries e WHERE e.content_type_id = t.id) " +
+        "FROM content_types t WHERE t.project_id = $1 AND t.api_id = $2");
+    cmd.Parameters.AddWithValue(pid);
+    cmd.Parameters.AddWithValue(apiId);
+    await using var r = await cmd.ExecuteReaderAsync();
+    if (!await r.ReadAsync() || !r.GetBoolean(1)) return null;
+    var old = (JsonSerializer.Deserialize<List<FieldDto>>(r.GetString(0), J) ?? []).ToDictionary(f => f.Id!, f => f.Type);
+    var changed = (b.Fields ?? []).FirstOrDefault(f => old.TryGetValue(f.Id!, out var t) && t != f.Type);
+    return changed is null ? null : $"field {changed.Id}: type cannot change while entries exist";
   }
 
   // First project of the user and whether their role may write.
@@ -132,6 +148,7 @@ static class CmsEndpoints
     var seen = new HashSet<string>();
     foreach (var f in fields)
     {
+      if (f is null) return "invalid field";
       if (f.Id is null || !ApiId.IsMatch(f.Id)) return "invalid field id";
       if (!seen.Add(f.Id)) return $"duplicate field id {f.Id}";
       if (f.Name is null || f.Name.Trim().Length is < 1 or > 100) return $"field {f.Id}: name must be 1-100 chars";

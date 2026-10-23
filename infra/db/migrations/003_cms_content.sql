@@ -20,7 +20,7 @@ CREATE TABLE content_types (
 CREATE TABLE entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  content_type_id BIGINT NOT NULL REFERENCES content_types(id) ON DELETE RESTRICT,
+  content_type_id BIGINT NOT NULL REFERENCES content_types(id) ON DELETE NO ACTION,
   data JSONB NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(data) = 'object'),  -- working draft
   published_data JSONB CHECK (jsonb_typeof(published_data) = 'object'),    -- snapshot; NULL = not published
   version INT NOT NULL DEFAULT 1,             -- optimistic locking
