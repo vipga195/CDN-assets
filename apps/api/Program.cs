@@ -7,6 +7,8 @@ using static AdminEndpoints;
 using static AuthEndpoints;
 using static ImageEndpoints;
 using static MeEndpoints;
+using static CmsEndpoints;
+using static EntryEndpoints;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -54,6 +56,9 @@ app.MapAuth();
 app.MapMe();
 app.MapImages();
 app.MapAdmin();
+app.MapCms();
+app.MapEntries();
+
 app.Run();
 
 record Creds(string? Email, string? Password);
