@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { SITE_URL } from '@/services/lib/site'
+import { OG_IMAGE_ID, SITE_URL, cdnImageUrl } from '@/services/lib/site'
 
 const TITLE = 'imgcdn - tải ảnh một lần, nhận link ảnh tối ưu'
 const DESCRIPTION = 'Tải ảnh PNG/JPEG lên một lần, nhận link ảnh đã resize và đổi định dạng avif, webp.'
@@ -11,7 +11,11 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   robots: { index: true },
   alternates: { canonical: SITE_URL },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: SITE_URL, siteName: 'imgcdn', type: 'website' },
+  openGraph: {
+    title: TITLE, description: DESCRIPTION, url: SITE_URL, siteName: 'imgcdn', type: 'website',
+    ...(OG_IMAGE_ID && { images: [{ url: cdnImageUrl(OG_IMAGE_ID, 2048, 'orig'), width: 1200, height: 630, alt: 'CDN - Content Delivery Network' }] }),
+  },
+  ...(OG_IMAGE_ID && { twitter: { card: 'summary_large_image', images: [cdnImageUrl(OG_IMAGE_ID, 2048, 'orig')] } }),
 }
 
 const FEATURES = [

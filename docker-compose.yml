@@ -57,6 +57,8 @@ services:
       context: ./apps/admin
       args:
         NEXT_PUBLIC_CDN_URL: https://cdn.cocahome.click
+        NEXT_PUBLIC_LOGO_ID: ${LOGO_IMAGE_ID:-}
+        NEXT_PUBLIC_OG_IMAGE_ID: ${OG_IMAGE_ID:-}
         SITE_URL: https://cms.cocahome.click
     environment:
       API_URL: http://api:8080
