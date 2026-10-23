@@ -42,6 +42,14 @@ Ghi chú riêng của máy dev (đường dẫn, cổng, kết quả đo, dọn 
 3. `docker compose up -d --build`
 4. Kiểm tra: `curl localhost:8090/healthz` trả `ok`.
 
+## Kiểm thử
+
+```bash
+dotnet test apps/api.Tests
+```
+
+Hiện mới có test cho `UserEvents`.
+
 ## API
 
 | Route | Auth | Việc |
