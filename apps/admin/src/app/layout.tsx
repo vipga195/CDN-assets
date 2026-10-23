@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: 'imgcdn', template: '%s | imgcdn' },
   robots: { index: false },
+  icons: { icon: '/assets/logo/icon.svg' },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
