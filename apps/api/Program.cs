@@ -27,6 +27,7 @@ builder.Services.AddSingleton(NpgsqlDataSource.Create(connStr));
 builder.Services.AddSingleton<UserEvents>();
 builder.Services.AddSingleton<ImgOptions>();
 builder.Services.AddSingleton<ImgproxySigner>();
+builder.Services.AddHostedService<OrphanSweeper>();
 
 builder.Services.AddRateLimiter(o =>
 {
@@ -63,3 +64,5 @@ app.Run();
 
 record Creds(string? Email, string? Password);
 record UserPatch([property: JsonPropertyName("quota_bytes")] long? QuotaBytes, bool? Disabled);
+
+record PasswordChange([property: JsonPropertyName("current_password")] string? CurrentPassword, [property: JsonPropertyName("new_password")] string? NewPassword);

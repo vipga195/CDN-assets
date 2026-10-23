@@ -54,3 +54,19 @@ export async function logout() {
   store.set(COOKIE, '', { path: '/', maxAge: 0 })
   redirect('/login')
 }
+
+export async function changePassword(_prev: string | null, form: FormData): Promise<string | null> {
+  const token = (await cookies()).get(COOKIE)?.value
+  if (!token) redirect('/login')
+  const res = await fetch(`${API_URL}/me/password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ current_password: form.get('current_password'), new_password: form.get('new_password') }),
+    cache: 'no-store',
+  })
+  if (res.status === 401) redirect('/login')
+  if (res.status === 403) return 'Mật khẩu hiện tại không đúng'
+  if (res.status === 400) return 'Mật khẩu mới 8-72 ký tự và khác mật khẩu cũ'
+  if (!res.ok) return 'Không đổi được mật khẩu, thử lại sau'
+  return null
+}
