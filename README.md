@@ -57,6 +57,19 @@ Ghi chú riêng của máy dev (đường dẫn, cổng, kết quả đo, dọn 
 | `GET /admin/users` | admin | danh sách user: `id`, `email`, `role`, `disabled`, `quota_bytes`, `used_bytes`, `created_at` (401 không token, 403 không phải admin) |
 | `PATCH /admin/users/{id}` | admin | `{"quota_bytes": n, "disabled": bool}` (một hoặc cả hai); 204, 404 nếu không có user, 400 nếu body sai hoặc tự khoá chính mình. Khoá user xoá hết session của họ |
 
+API CMS (tenant = project đầu tiên của user; vai trò `viewer` chỉ đọc, `editor`/`admin` được ghi):
+
+| Route | Việc |
+|---|---|
+| `GET /cms/content-types`, `GET /cms/content-types/{id}` | danh sách / chi tiết content type |
+| `POST /cms/content-types` | tạo `{id, name, description, displayFieldId, fields[]}`; field type: text, longText, number, boolean, date, json, media, reference |
+| `PUT /cms/content-types/{id}` | sửa; 409 nếu đổi `type` của field khi đã có entry |
+| `DELETE /cms/content-types/{id}` | xoá; 409 nếu còn entry |
+| `GET /cms/entries?type=&limit=&before_updated=&before_id=` | phân trang theo `(updated_at, id)` giảm dần, header `X-Total-Count` |
+| `GET /cms/entries/{id}`, `DELETE /cms/entries/{id}` | chi tiết / xoá |
+| `POST /cms/entries`, `PUT /cms/entries/{id}` | `{typeId, values, version}`; PUT khoá lạc quan theo `version` (409 khi lệch); key của field đã bị xoá khỏi content type sẽ bị bỏ khi lưu |
+| `POST /cms/entries/{id}/publish`, `POST /cms/entries/{id}/unpublish` | publish chụp bản nháp vào `published_data` (kiểm tra field bắt buộc, `version` phải khớp); chưa có API đọc công khai |
+
 Khi đăng ký, mỗi user được tạo kèm một account (gói `default`), một project `Default` và là `admin` của project đó. Upload và xoá ảnh cập nhật cả `users.used_bytes` lẫn `accounts.used_bytes`.
 
 Ví dụ:
@@ -103,6 +116,7 @@ Script upload từng ảnh, tải bản gốc/webp/avif ở chiều rộng `W`, 
 - Vai trò admin (`users.role`, `users.disabled`), `/admin/users`, khoá/mở user (bước B).
 - Giao diện admin (`apps/admin`, Next.js, chạy container riêng qua nginx `/admin/`): đăng nhập bằng cookie httpOnly, thư viện ảnh (upload, copy link, xoá, quota), cập nhật quota/khoá user theo thời gian thực (SSE), trang Users cho admin (đổi quota, khoá/mở user) (bước C-F).
 - Schema nhiều tenant (migration 002): gói > account > project > thành viên, API key, alias, ảnh nháp/xuất bản. API mới dùng account/project mặc định cho mỗi user; chưa có endpoint cho project, thành viên hay API key.
+- CMS (migration 003): content type, entry nháp/publish, màn hình `/content-model` và `/content` trong admin. Migration 003 chạy bằng tay trên DB đã có dữ liệu, giống 002 (xem Lưu ý vận hành).
 
 ## Kế hoạch
 
