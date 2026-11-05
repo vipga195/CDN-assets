@@ -125,6 +125,7 @@ Script upload từng ảnh, tải bản gốc/webp/avif ở chiều rộng `W`, 
 - Giao diện admin (`apps/admin`, Next.js, chạy container riêng qua nginx `/admin/`): đăng nhập bằng cookie httpOnly, thư viện ảnh (upload, copy link, xoá, quota), cập nhật quota/khoá user theo thời gian thực (SSE), trang Users cho admin (đổi quota, khoá/mở user) (bước C-F).
 - Schema nhiều tenant (migration 002): gói > account > project > thành viên, API key, alias, ảnh nháp/xuất bản. API mới dùng account/project mặc định cho mỗi user; chưa có endpoint cho project, thành viên hay API key.
 - CMS (migration 003): content type, entry nháp/publish, màn hình `/content-model` và `/content` trong admin. Migration 003 chạy bằng tay trên DB đã có dữ liệu, giống 002 (xem Lưu ý vận hành).
+- Video (migration 004): bảng `videos` riêng, chỉ nhận mp4 (≤ 100 MiB, tối đa 4K). Endpoint: `POST /upload/video` (multipart, field `file`), `GET /v/{id}` (công khai theo UUID, hỗ trợ Range), `DELETE /videos/{id}`. File lưu ở `{UPLOAD_DIR}/videos/{userId}/{id}.mp4` (đổi bằng `VIDEO_DIR`), OrphanSweeper không quét thư mục này. Chạy migration bằng tay (sao lưu trước): `docker compose exec -T postgres psql -U imgcdn -d imgcdn -v ON_ERROR_STOP=1 < infra/db/migrations/004_videos.sql`, rồi `docker compose up -d --build api` và reload nginx.
 
 ## Kế hoạch
 

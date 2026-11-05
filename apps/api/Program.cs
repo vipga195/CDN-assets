@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using static AdminEndpoints;
 using static AuthEndpoints;
 using static ImageEndpoints;
+using static VideoEndpoints;
 using static MeEndpoints;
 using static CmsEndpoints;
 using static EntryEndpoints;
@@ -38,6 +39,12 @@ builder.Services.AddRateLimiter(o =>
     c.QueueLimit = 20;
     c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
   });
+  o.AddConcurrencyLimiter("video-upload", c =>
+  {
+    c.PermitLimit = 2;
+    c.QueueLimit = 5;
+    c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+  });
 });
 
 var app = builder.Build();
@@ -56,6 +63,7 @@ app.MapGet("/healthz", () => "ok");
 app.MapAuth();
 app.MapMe();
 app.MapImages();
+app.MapVideos();
 app.MapAdmin();
 app.MapCms();
 app.MapEntries();
