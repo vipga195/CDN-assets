@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useRef } from 'react'
+import { useActionState, useRef, useState } from 'react'
 import { changePassword } from './actions'
 import Button from '@/components/ui/button'
 import Input from '@/components/ui/input'
@@ -8,9 +8,14 @@ import Alert from '@/components/ui/alert'
 
 export default function ChangePasswordForm() {
   const ref = useRef<HTMLFormElement>(null)
+  const [done, setDone] = useState<boolean>(false)
   const [error, action, pending] = useActionState(async (prev: string | null, form: FormData) => {
+    setDone(false)
     const err = await changePassword(prev, form)
-    if (!err) ref.current?.reset()
+    if (!err) {
+      ref.current?.reset()
+      setDone(true)
+    }
     return err
   }, null)
   return (
@@ -19,6 +24,11 @@ export default function ChangePasswordForm() {
       <Input name="current_password" type="password" placeholder="Mật khẩu hiện tại" autoComplete="current-password" required />
       <Input name="new_password" type="password" placeholder="Mật khẩu mới (8-72 ký tự)" autoComplete="new-password" minLength={8} required />
       {error && <Alert>{error}</Alert>}
+      {done && !error && (
+        <p role="status" className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+          Đã đổi mật khẩu. Các phiên đăng nhập khác đã bị đăng xuất.
+        </p>
+      )}
       <Button disabled={pending} className="w-full">{pending ? 'Đang lưu...' : 'Đổi mật khẩu'}</Button>
     </form>
   )
