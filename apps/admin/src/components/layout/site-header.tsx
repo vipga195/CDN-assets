@@ -28,6 +28,7 @@ export default async function SiteHeader() {
         <nav className="order-last flex w-full items-center gap-6 overflow-x-auto md:order-none md:w-auto md:gap-8">
           {me && <Link href="/assets" className={LINK}>Thư viện ảnh</Link>}
           {me?.role === 'admin' && <Link href="/users" className={LINK}>Người dùng</Link>}
+          {me && <Link href="/account" className={LINK}>Tài khoản</Link>}
           <Link href="/docs" className={LINK}>Tài liệu</Link>
         </nav>
 
