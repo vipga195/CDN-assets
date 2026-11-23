@@ -1,0 +1,11 @@
+{
+  "[csharp]": {
+    "editor.quickSuggestions": {
+      "other": "on",
+      "comments": "off",
+      "strings": "off"
+    }
+  },
+  "dotnet.preferCSharpExtension": true,
+  "dotnet.server.path": ""
+}

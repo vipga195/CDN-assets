@@ -6,7 +6,10 @@ using System.Text.Json.Serialization;
 using static AdminEndpoints;
 using static AuthEndpoints;
 using static ImageEndpoints;
+using static VideoEndpoints;
 using static MeEndpoints;
+using static CmsEndpoints;
+using static EntryEndpoints;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -25,6 +28,7 @@ builder.Services.AddSingleton(NpgsqlDataSource.Create(connStr));
 builder.Services.AddSingleton<UserEvents>();
 builder.Services.AddSingleton<ImgOptions>();
 builder.Services.AddSingleton<ImgproxySigner>();
+builder.Services.AddHostedService<OrphanSweeper>();
 
 builder.Services.AddRateLimiter(o =>
 {
@@ -33,6 +37,12 @@ builder.Services.AddRateLimiter(o =>
   {
     c.PermitLimit = 8;
     c.QueueLimit = 20;
+    c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+  });
+  o.AddConcurrencyLimiter("video-upload", c =>
+  {
+    c.PermitLimit = 2;
+    c.QueueLimit = 5;
     c.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
   });
 });
@@ -53,8 +63,14 @@ app.MapGet("/healthz", () => "ok");
 app.MapAuth();
 app.MapMe();
 app.MapImages();
+app.MapVideos();
 app.MapAdmin();
+app.MapCms();
+app.MapEntries();
+
 app.Run();
 
 record Creds(string? Email, string? Password);
 record UserPatch([property: JsonPropertyName("quota_bytes")] long? QuotaBytes, bool? Disabled);
+
+record PasswordChange([property: JsonPropertyName("current_password")] string? CurrentPassword, [property: JsonPropertyName("new_password")] string? NewPassword);

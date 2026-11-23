@@ -1,8 +1,10 @@
 sealed class ImgOptions
 {
   public const long MaxUploadBytes = 20 * 1024 * 1024;
+  public const long MaxVideoBytes = 100 * 1024 * 1024; // Cloudflare free plan caps request bodies at 100 MB
 
   public string UploadDir { get; }
+  public string VideoDir { get; }
   public string ProxyUrl { get; }
   public int SmallMaxSide { get; }
   public int SmallQuality { get; }
@@ -12,6 +14,8 @@ sealed class ImgOptions
   public ImgOptions(IConfiguration cfg)
   {
     UploadDir = cfg["UPLOAD_DIR"] ?? "/data/uploads";
+    // Non-numeric subfolder: OrphanSweeper only walks all-digit user folders, so videos are never swept.
+    VideoDir = cfg["VIDEO_DIR"] ?? Path.Combine(UploadDir, "videos");
     ProxyUrl = cfg["IMGPROXY_URL"]
       ?? throw new InvalidOperationException("missing IMGPROXY_URL");
     SmallMaxSide = cfg.GetValue("SMALL_MAX_SIDE", 512);

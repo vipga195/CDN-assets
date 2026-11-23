@@ -1,0 +1,29 @@
+# Homelab (x86_64) layer, built and started by the self-hosted runner:
+#   docker compose -f docker-compose.yml -f compose.homelab.yml up -d --build --wait
+x-uploads: &uploads
+  type: bind
+  source: /srv/data/imgcdn-uploads
+  target: /data/uploads
+  bind:
+    create_host_path: false
+
+services:
+  postgres:
+    restart: unless-stopped
+    mem_limit: 512m
+  imgproxy:
+    restart: unless-stopped
+    mem_limit: 1g
+    volumes:
+      - <<: *uploads
+        read_only: true
+  api:
+    restart: unless-stopped
+    volumes:
+      - *uploads
+  nginx:
+    restart: unless-stopped
+    mem_limit: 128m
+    # Reached by cloudflared (host network) on loopback only.
+    ports: !override
+      - "127.0.0.1:8090:80"

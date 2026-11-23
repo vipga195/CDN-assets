@@ -23,6 +23,8 @@ services:
       IMGPROXY_MAX_SRC_RESOLUTION: "50"
       IMGPROXY_MAX_SRC_FILE_SIZE: "20971520"
       IMGPROXY_AVIF_SPEED: "8"
+      IMGPROXY_CONCURRENCY: "4"
+      IMGPROXY_REQUESTS_QUEUE_SIZE: "50"
     volumes:
       - type: bind
         source: "/Volumes/Media 1/imgcdn-uploads"
@@ -55,6 +57,8 @@ services:
       context: ./apps/admin
       args:
         NEXT_PUBLIC_CDN_URL: https://cdn.cocahome.click
+        NEXT_PUBLIC_LOGO_ID: ${LOGO_IMAGE_ID:-}
+        NEXT_PUBLIC_OG_IMAGE_ID: ${OG_IMAGE_ID:-}
         SITE_URL: https://cms.cocahome.click
     environment:
       API_URL: http://api:8080

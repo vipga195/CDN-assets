@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { SITE_URL } from '../lib/site'
+import { SITE_URL } from '@/services/lib/site'
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: 'imgcdn', template: '%s | imgcdn' },
   robots: { index: false },
+  icons: { icon: '/assets/logo/icon.svg' },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
